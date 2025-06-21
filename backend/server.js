@@ -3,7 +3,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
 
-const app = expre
+const app = express();
 
 // Enable CORS for all routes
 app.use(cors({
@@ -137,4 +137,4 @@ server.listen(PORT, () => {
   console.log(`🚀 WebRTC Signaling Server running on port ${PORT}`);
   console.log(`📡 Socket.io server ready for connections`);
   console.log(`🌍 CORS enabled for all origins`);
-});naling server running on port ${PORT}`));
+});
