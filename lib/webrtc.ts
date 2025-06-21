@@ -33,6 +33,7 @@ export class WebRTCPeer {
   private peerConnection: RTCPeerConnection;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
+  private isClosed: boolean = false;
 
   constructor(config: WebRTCConfig = DEFAULT_WEBRTC_CONFIG) {
     this.peerConnection = new RTCPeerConnection(config);
@@ -41,22 +42,28 @@ export class WebRTCPeer {
 
   private setupPeerConnection(): void {
     this.peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
+      if (event.candidate && !this.isClosed) {
         this.onIceCandidate?.(event.candidate);
       }
     };
 
     this.peerConnection.ontrack = (event) => {
-      this.remoteStream = event.streams[0];
-      this.onRemoteStream?.(this.remoteStream);
+      if (!this.isClosed) {
+        this.remoteStream = event.streams[0];
+        this.onRemoteStream?.(this.remoteStream);
+      }
     };
 
     this.peerConnection.onconnectionstatechange = () => {
-      this.onConnectionStateChange?.(this.peerConnection.connectionState);
+      if (!this.isClosed) {
+        this.onConnectionStateChange?.(this.peerConnection.connectionState);
+      }
     };
 
     this.peerConnection.oniceconnectionstatechange = () => {
-      this.onIceConnectionStateChange?.(this.peerConnection.iceConnectionState);
+      if (!this.isClosed) {
+        this.onIceConnectionStateChange?.(this.peerConnection.iceConnectionState);
+      }
     };
   }
 
@@ -64,12 +71,14 @@ export class WebRTCPeer {
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
       
-      // Add tracks to peer connection
-      this.localStream.getTracks().forEach(track => {
-        if (this.localStream) {
-          this.peerConnection.addTrack(track, this.localStream);
-        }
-      });
+      // Add tracks to peer connection only if it's not closed
+      if (!this.isClosed && this.peerConnection.signalingState !== 'closed') {
+        this.localStream.getTracks().forEach(track => {
+          if (this.localStream && !this.isClosed && this.peerConnection.signalingState !== 'closed') {
+            this.peerConnection.addTrack(track, this.localStream);
+          }
+        });
+      }
 
       return this.localStream;
     } catch (error) {
@@ -79,27 +88,39 @@ export class WebRTCPeer {
   }
 
   async createOffer(): Promise<RTCSessionDescriptionInit> {
+    if (this.isClosed || this.peerConnection.signalingState === 'closed') {
+      throw new Error('Peer connection is closed');
+    }
     const offer = await this.peerConnection.createOffer();
     await this.peerConnection.setLocalDescription(offer);
     return offer;
   }
 
   async createAnswer(): Promise<RTCSessionDescriptionInit> {
+    if (this.isClosed || this.peerConnection.signalingState === 'closed') {
+      throw new Error('Peer connection is closed');
+    }
     const answer = await this.peerConnection.createAnswer();
     await this.peerConnection.setLocalDescription(answer);
     return answer;
   }
 
   async setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
+    if (this.isClosed || this.peerConnection.signalingState === 'closed') {
+      throw new Error('Peer connection is closed');
+    }
     await this.peerConnection.setRemoteDescription(description);
   }
 
   async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+    if (this.isClosed || this.peerConnection.signalingState === 'closed') {
+      throw new Error('Peer connection is closed');
+    }
     await this.peerConnection.addIceCandidate(candidate);
   }
 
   toggleVideo(): boolean {
-    if (this.localStream) {
+    if (this.localStream && !this.isClosed) {
       const videoTrack = this.localStream.getVideoTracks()[0];
       if (videoTrack) {
         videoTrack.enabled = !videoTrack.enabled;
@@ -110,7 +131,7 @@ export class WebRTCPeer {
   }
 
   toggleAudio(): boolean {
-    if (this.localStream) {
+    if (this.localStream && !this.isClosed) {
       const audioTrack = this.localStream.getAudioTracks()[0];
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
@@ -137,10 +158,13 @@ export class WebRTCPeer {
   }
 
   close(): void {
+    this.isClosed = true;
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => track.stop());
     }
-    this.peerConnection.close();
+    if (this.peerConnection.signalingState !== 'closed') {
+      this.peerConnection.close();
+    }
   }
 
   // Event handlers

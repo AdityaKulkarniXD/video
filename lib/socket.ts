@@ -18,6 +18,7 @@ class SocketManager {
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
         timeout: 20000,
+        forceNew: false, // Reuse existing connection if available
       });
 
       this.socket.on('connect', () => {

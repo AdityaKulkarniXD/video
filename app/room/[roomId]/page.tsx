@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
-import { socketManager } from '@/lib/socket';
+import { socketManager, Socket } from '@/lib/socket';
 import { WebRTCPeer } from '@/lib/webrtc';
 import { 
   Mic, 
@@ -30,7 +30,7 @@ export default function RoomPage() {
   
   // WebRTC and Socket refs
   const webrtcPeer = useRef<WebRTCPeer | null>(null);
-  const socket = useRef(socketManager.connect());
+  const socket = useRef<Socket | null>(null);
   
   // Media streams
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -57,7 +57,9 @@ export default function RoomPage() {
       
       // Set up WebRTC event handlers
       webrtcPeer.current.onIceCandidate = (candidate) => {
-        socket.current.emit('ice-candidate', { candidate, roomId });
+        if (socket.current) {
+          socket.current.emit('ice-candidate', { candidate, roomId });
+        }
       };
       
       webrtcPeer.current.onRemoteStream = (stream) => {
@@ -83,8 +85,10 @@ export default function RoomPage() {
       const stream = await webrtcPeer.current.getUserMedia();
       setLocalStream(stream);
       
-      // Join the room
-      socket.current.emit('join-room', roomId);
+      // Join the room if socket is connected
+      if (socket.current) {
+        socket.current.emit('join-room', roomId);
+      }
       
     } catch (error) {
       console.error('Error initializing call:', error);
@@ -95,6 +99,11 @@ export default function RoomPage() {
 
   // Socket event handlers
   useEffect(() => {
+    // Initialize socket connection if not already connected
+    if (!socket.current) {
+      socket.current = socketManager.connect();
+    }
+
     const socketInstance = socket.current;
 
     socketInstance.on('user-joined', async (userId) => {
@@ -176,11 +185,10 @@ export default function RoomPage() {
     initializeCall();
 
     return () => {
-      // Cleanup
+      // Cleanup WebRTC peer but don't disconnect the global socket manager
       if (webrtcPeer.current) {
         webrtcPeer.current.close();
       }
-      socketManager.disconnect();
     };
   }, [initializeCall]);
 
@@ -189,7 +197,9 @@ export default function RoomPage() {
     if (webrtcPeer.current) {
       const enabled = webrtcPeer.current.toggleAudio();
       setIsAudioEnabled(enabled);
-      socket.current.emit('media-state', { audio: enabled, roomId });
+      if (socket.current) {
+        socket.current.emit('media-state', { audio: enabled, roomId });
+      }
     }
   };
 
@@ -197,7 +207,9 @@ export default function RoomPage() {
     if (webrtcPeer.current) {
       const enabled = webrtcPeer.current.toggleVideo();
       setIsVideoEnabled(enabled);
-      socket.current.emit('media-state', { video: enabled, roomId });
+      if (socket.current) {
+        socket.current.emit('media-state', { video: enabled, roomId });
+      }
     }
   };
 
@@ -233,7 +245,10 @@ export default function RoomPage() {
     if (webrtcPeer.current) {
       webrtcPeer.current.close();
     }
-    socketManager.disconnect();
+    // Leave the room but don't disconnect the global socket
+    if (socket.current) {
+      socket.current.emit('leave-room', roomId);
+    }
     router.push('/');
   };
 
